@@ -10,7 +10,7 @@ The project is developed using Python and Streamlit.
 
 ### Live Demo
 
-https://aiinterviewpracticesystem-n6bo4qgxebdzkbn8uzbnkt.streamlit.app/
+https://aiinterviewpracticesystem-eikmauhjpzr3ngfjugwuqd.streamlit.app/
 
 ### Technologies Used
 
