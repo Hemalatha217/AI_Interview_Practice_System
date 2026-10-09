@@ -1,28 +1,52 @@
+
 import pytesseract
 import json
 import re
+import shutil
 from PIL import Image, ImageEnhance, ImageFilter
 
-TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
+# Find Tesseract automatically on Windows or Streamlit Cloud
+TESSERACT_PATH = shutil.which("tesseract")
+
+# Windows fallback for your laptop
+if TESSERACT_PATH is None:
+    WINDOWS_TESSERACT_PATH = (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    )
+
+    import os
+
+    if os.path.exists(WINDOWS_TESSERACT_PATH):
+        TESSERACT_PATH = WINDOWS_TESSERACT_PATH
+
+# Configure Tesseract
+if TESSERACT_PATH:
+    pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 
 
 def preprocess_image(image):
-    """
-    Improve image quality before OCR.
-    """
+    """Improve image quality before OCR."""
 
     image = image.convert("L")
+
     enhancer = ImageEnhance.Contrast(image)
     image = enhancer.enhance(2)
+
     image = image.filter(ImageFilter.SHARPEN)
+
     return image
 
+
 def extract_text_from_image(uploaded_file):
-    """
-    Extract text from uploaded image using Tesseract OCR.
-    """
+    """Extract text from an uploaded image using Tesseract OCR."""
+
+    if not TESSERACT_PATH:
+        raise RuntimeError(
+            "Tesseract OCR is not installed. "
+            "Add tesseract-ocr to packages.txt "
+            "in your GitHub repository and redeploy."
+        )
 
     image = Image.open(uploaded_file)
 
@@ -35,35 +59,42 @@ def extract_text_from_image(uploaded_file):
 
     return text.strip()
 
+
 def clean_text(text):
-    """
-    Clean OCR text.
-    """
+    """Clean OCR text."""
 
     text = text.replace("\r", "\n")
+
+    # Remove repeated spaces
     text = re.sub(r"[ \t]+", " ", text)
+
+    # Remove multiple blank lines
     text = re.sub(r"\n+", "\n", text)
+
     return text.strip()
 
+
 def extract_question_and_answer(ocr_text):
-    """
-    Try to separate the question and answer from OCR text.
-    """
+    """Separate the question and answer from OCR text."""
 
     text = clean_text(ocr_text)
+
     lines = [
         line.strip()
         for line in text.split("\n")
         if line.strip()
     ]
+
     if not lines:
         return {
             "ocr_text": "",
             "detected_question": "",
             "detected_answer": ""
         }
+
     question = ""
     answer_lines = []
+    question_index = -1
 
     question_patterns = [
         r"^(q\d*[\.\):\-]?)",
@@ -81,8 +112,9 @@ def extract_question_and_answer(ocr_text):
         r"^(difference\b)"
     ]
 
-    question_index = -1
+    # Find the question
     for i, line in enumerate(lines):
+
         lower_line = line.lower()
 
         if "?" in line:
@@ -99,10 +131,12 @@ def extract_question_and_answer(ocr_text):
         if question_index != -1:
             break
 
+    # If no question is detected, assume the first line is the question
     if question_index == -1:
         question = lines[0]
         question_index = 0
 
+    # Everything after the question is treated as the answer
     for i in range(question_index + 1, len(lines)):
         answer_lines.append(lines[i])
 
@@ -116,9 +150,7 @@ def extract_question_and_answer(ocr_text):
 
 
 def convert_ocr_to_json(ocr_text):
-    """
-    Convert OCR output into JSON-compatible dictionary.
-    """
+    """Convert OCR output into a dictionary."""
 
     result = extract_question_and_answer(ocr_text)
 
@@ -126,9 +158,7 @@ def convert_ocr_to_json(ocr_text):
 
 
 def json_string(data):
-    """
-    Convert dictionary to formatted JSON string.
-    """
+    """Convert a dictionary into a formatted JSON string."""
 
     return json.dumps(
         data,
