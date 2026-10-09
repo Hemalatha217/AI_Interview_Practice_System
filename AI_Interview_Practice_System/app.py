@@ -1,143 +1,251 @@
+# app.py
 
 import streamlit as st
-from ocr import extract_text
-from question_generator import generate_questions
-from answer_evaluator import evaluate_answer
+import json
+
+from question import generate_questions
+from ocr import (
+    extract_text_from_image,
+    convert_ocr_to_json,
+    json_string
+)
+from answer import evaluate_answer
+
 
 st.set_page_config(
-    page_title="AI Interview Practice System",
-    page_icon="🎤"
+    page_title="AI Interview Practice",
+    page_icon="🎯",
+    layout="centered"
 )
 
-st.title("AI Interview Practice System")
+st.title("🎯 Interview Practice System")
 
 st.write(
-    "Select an interview role and practice role-specific interview questions."
+    "Practice interview questions and upload "
+    "your handwritten or printed answer."
 )
 
-# --------------------------------------------------
-# SELECT INTERVIEW ROLE
-# --------------------------------------------------
 
-job_roles = [
-    "Software Engineer",
-    "Full Stack Developer",
-    "Frontend Developer",
-    "Backend Developer",
+roles = [
+    "Software Developer",
+    "Python Developer",
+    "Java Developer",
     "Web Developer",
-    "Mobile App Developer",
-
-    "AI Engineer",
-    "Machine Learning Engineer",
-    "Generative AI Engineer",
-    "Prompt Engineer",
-
     "Data Analyst",
     "Data Scientist",
-    "Data Engineer",
-
-    "Cybersecurity Analyst",
-    "Ethical Hacker",
-
-    "Project Manager",
-    "Product Manager",
-
-    "HR Executive",
-    "Recruiter",
-
-    "Financial Analyst"
+    "AI/ML Engineer",
+    "Database Administrator"
 ]
 
 role = st.selectbox(
     "Select Interview Role",
-    job_roles
+    roles
 )
 
-# --------------------------------------------------
-# GENERATE QUESTIONS
-# --------------------------------------------------
+if st.button("Generate Interview Questions"):
 
-if st.button("Generate Questions"):
-
-    questions = generate_questions(role)
-
-    if questions:
-        st.session_state["questions"] = questions
-        st.session_state["role"] = role
-    else:
-        st.error("Unable to generate questions.")
-
-
-# --------------------------------------------------
-# DISPLAY QUESTIONS
-# --------------------------------------------------
-
-if "questions" in st.session_state:
-
-    st.subheader(
-        f"{st.session_state['role']} Interview Questions"
+    questions = generate_questions(
+        role,
+        number_of_questions=10
     )
 
-    for i, q in enumerate(
-        st.session_state["questions"],
-        start=1
-    ):
-        st.write(f"**Q{i}. {q}**")
+    st.session_state.questions = questions
+    st.session_state.role = role
 
+    st.session_state.pop(
+        "ocr_text",
+        None
+    )
 
-# --------------------------------------------------
-# UPLOAD ANSWER SHEET
-# --------------------------------------------------
+    st.session_state.pop(
+        "ocr_json",
+        None
+    )
+
+    st.session_state.pop(
+        "evaluation",
+        None
+    )
+
+    st.success(
+        f"Questions generated for {role}"
+    )
 
 if "questions" in st.session_state:
 
-    st.divider()
+    st.subheader("📝 Interview Questions")
 
-    st.subheader("Practice Your Answer")
+    questions = st.session_state.questions
+
+    selected_question = st.radio(
+        "Select a question to answer:",
+        questions
+    )
+
+    st.session_state.selected_question = (
+        selected_question
+    )
+
+    st.info(
+        f"Selected Question: {selected_question}"
+    )
+
+    st.subheader("📷 Upload Your Answer")
 
     uploaded_file = st.file_uploader(
-        "Upload Your Answer Sheet",
+        "Upload an image containing your question and answer",
         type=["png", "jpg", "jpeg"]
     )
 
-    if uploaded_file:
+    if uploaded_file is not None:
 
         st.image(
             uploaded_file,
-            caption="Uploaded Answer Sheet",
-            width=600
+            caption="Uploaded Answer",
+            use_container_width=True
         )
 
-        # ------------------------------------------
-        # OCR
-        # ------------------------------------------
+        if st.button("Extract Text from Image"):
 
-        extracted_text = extract_text(uploaded_file)
+            with st.spinner(
+                "Reading image using Tesseract..."
+            ):
 
-        st.subheader("Extracted Answer")
+                ocr_text = extract_text_from_image(
+                    uploaded_file
+                )
+
+                ocr_json = convert_ocr_to_json(
+                    ocr_text
+                )
+
+                st.session_state.ocr_text = (
+                    ocr_text
+                )
+
+                st.session_state.ocr_json = (
+                    ocr_json
+                )
+
+    if "ocr_text" in st.session_state:
+
+        st.subheader("🔍 Extracted OCR Text")
 
         st.text_area(
-            "Your Answer",
-            extracted_text,
-            height=200
+            "Text extracted from image:",
+            st.session_state.ocr_text,
+            height=150
         )
 
-        # ------------------------------------------
-        # EVALUATE ANSWER
-        # ------------------------------------------
+    if "ocr_json" in st.session_state:
+
+        st.subheader("📄 OCR JSON")
+
+        st.code(
+            json_string(
+                st.session_state.ocr_json
+            ),
+            language="json"
+        )
+
+        detected_question = (
+            st.session_state.ocr_json
+            .get("detected_question", "")
+        )
+
+        detected_answer = (
+            st.session_state.ocr_json
+            .get("detected_answer", "")
+        )
+
+        st.write(
+            "**Detected Question:**",
+            detected_question
+        )
+
+        st.write(
+            "**Detected Answer:**",
+            detected_answer
+        )
 
         if st.button("Evaluate Answer"):
 
-            score, feedback = evaluate_answer(
-                st.session_state["questions"][0],
-                extracted_text
+            generated_question = (
+                st.session_state.selected_question
             )
 
-            st.success(
-                f"Score: {score}/100"
+            result = evaluate_answer(
+                generated_question,
+                detected_question,
+                detected_answer
             )
 
-            st.subheader("Feedback")
+            st.session_state.evaluation = result
 
-            st.write(feedback)
+    if "evaluation" in st.session_state:
 
+        result = st.session_state.evaluation
+
+        st.subheader("📊 Evaluation Result")
+
+        score = result["score"]
+
+        st.metric(
+            "Score",
+            f"{score}/100"
+        )
+
+        st.write(
+            "**Status:**",
+            result["status"]
+        )
+
+        st.write(
+            "**Question Similarity:**",
+            f"{result['question_similarity']}%"
+        )
+
+        st.write(
+            "**Generated Question:**",
+            result["generated_question"]
+        )
+
+        st.write(
+            "**Detected Question:**",
+            result["detected_question"]
+        )
+
+        st.write(
+            "**Detected Answer:**",
+            result["detected_answer"]
+        )
+
+        st.write(
+            "**Feedback:**",
+            result["feedback"]
+        )
+
+        if result["matched_keywords"]:
+
+            st.write(
+                "**Matched Keywords:**",
+                ", ".join(
+                    result["matched_keywords"]
+                )
+            )
+
+        st.write(
+            "**Improved Answer Suggestion:**",
+            result["improved_answer"]
+        )
+
+        st.subheader("📄 Final Evaluation JSON")
+
+        st.code(
+            json.dumps(
+                result,
+                indent=4,
+                ensure_ascii=False
+            ),
+            language="json"
+        )
